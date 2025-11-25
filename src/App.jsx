@@ -5,8 +5,10 @@ import Header from './components/header/Header'
 function App() {
 
   return (
-  <><Header />
-  <Footer /></>
+  <div className="body">
+    <Header />
+    <Footer />
+  </div>
   );
 }
 
