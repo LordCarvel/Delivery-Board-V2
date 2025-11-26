@@ -7,10 +7,9 @@
     <script>
       // SPA fallback para GitHub Pages
       (function() {
-        var pathParts = (window.location.pathname || '/').split('/').filter(Boolean);
-        var base = pathParts.length ? '/' + pathParts[0] + '/' : '/';
         var hash = window.location.hash || '';
-        window.location.replace(base + hash);
+        // redirect to root relative so assets resolve with base './'
+        window.location.replace('./' + hash);
       })();
     </script>
   </head>
