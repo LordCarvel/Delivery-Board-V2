@@ -5,9 +5,10 @@
     <title>Delivery Board - 404</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // SPA fallback for GitHub Pages
+      // SPA fallback para GitHub Pages
       (function() {
-        var base = '/Delivery-Board-V2/';
+        var pathParts = (window.location.pathname || '/').split('/').filter(Boolean);
+        var base = pathParts.length ? '/' + pathParts[0] + '/' : '/';
         var hash = window.location.hash || '';
         window.location.replace(base + hash);
       })();
@@ -16,4 +17,4 @@
   <body>
     <p>Redirecionando...</p>
   </body>
-></html>
+</html>
