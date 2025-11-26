@@ -8,8 +8,8 @@
       // SPA fallback para GitHub Pages
       (function() {
         var hash = window.location.hash || '';
-        // redirect to root relative so assets resolve with base './'
-        window.location.replace('./' + hash);
+        var base = '/Delivery-Board-V2/';
+        window.location.replace(base + hash);
       })();
     </script>
   </head>

@@ -4,6 +4,6 @@ import react from '@vitejs/plugin-react';
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Relative base to work both locally and on GitHub Pages
-  base: './',
+  // GitHub Pages base (repo name). In dev, Vite handles it automatically.
+  base: '/Delivery-Board-V2/',
 });
