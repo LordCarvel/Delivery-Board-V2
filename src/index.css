@@ -7,7 +7,6 @@
   --font-montserrat: 'Montserrat', Arial, Helvetica, sans-serif;
   --font-ibm-plex-mono: 'IBM Plex Mono', 'Courier New', monospace;
   --font-inter: 'Inter', Arial, Helvetica, sans-serif;
-
   --color-white: #FFFFFF;
   --color-dark-white: #FCFAFA;
   --color-light-gray-model-one: #d9d9d96c;
@@ -18,12 +17,30 @@
   --color-yellow: #FEE440;
   --color-red: #FF5555;
 
+  /* Spacing & sizing scale for a tighter UI */
+  --space-xxs: 0.125rem;
+  --space-xs: 0.25rem;
+  --space-sm: 0.4rem;
+  --space-md: 0.6rem;
+  --space-lg: 1rem;
+
+  --btn-font-size: 0.85rem;
+  --btn-radius: 6px;
+  --input-font-size: 0.95rem;
+
+  /* Card and surface tokens */
+  --card-radius: 10px;
+  --card-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
+  --surface-gradient: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(250,250,250,0.9));
+  --muted-text: #6b7280;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* GLOBAL */
 * {
   margin: 0;
   padding: 0;
@@ -38,4 +55,76 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* BUTTONS */
+.primary-btn {
+  background-color: var(--color-yellow);
+  border: none;
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-lg);
+  font-weight: 600;
+  font-family: var(--font-poppins);
+  font-size: var(--btn-font-size);
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.primary-btn:hover {
+  background-color: #ffec6b;
+}
+
+.secondary-btn {
+  background-color: var(--color-light-gray-model-two);
+  border: none;
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  font-weight: 500;
+  font-family: var(--font-poppins);
+  font-size: var(--btn-font-size);
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.secondary-btn:hover {
+  background-color: var(--color-gray);
+}
+
+.add-leva-btn {
+  background-color: var(--color-blue);
+  color: var(--color-white);
+  border: none;
+  border-radius: 6px;
+  padding: var(--space-xs) var(--space-md);
+  font-family: var(--font-poppins);
+  font-weight: 500;
+  font-size: var(--btn-font-size);
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.add-leva-btn:hover {
+  background-color: #6a93d3;
+}
+
+/* INPUTS */
+.search-input {
+  width: 70%;
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-roboto);
+  font-size: var(--input-font-size);
+  border: 1px solid var(--color-gray);
+  border-radius: 6px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--color-blue);
 }
