@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import './App.css';
 import Footer from './components/footer/Footer';
 import Header from './components/header/Header';
@@ -11,6 +11,8 @@ import Pedido from './components/pedido/Pedido';
 import AddMotoboyModal from './components/modals/AddMotoboy/AddMotoboyModal';
 import AddLevaModal from './components/modals/AddLeva/AddLevaModal';
 import EditPedidoModal from './components/modals/EditPedido/EditPedidoModal';
+import HelpModal from './components/modals/Help/HelpModal';
+import Tour from './components/tutorial/Tour';
 import { useDeliveryBoard } from './hooks/useDeliveryBoard';
 import { getWorkspaceId, setWorkspaceId, updateUrlWorkspace } from './utils/workspace';
 import { useRoute } from './router/Router';
@@ -59,6 +61,10 @@ function App() {
   const syncStatus = 'idle';
   const workspaceId = getWorkspaceId();
   const route = useRoute();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpDismissed, setHelpDismissed] = useState(() => window.localStorage.getItem('helpDismissed') === '1');
+  const [tourOpen, setTourOpen] = useState(false);
+  const DEMO_NAME = 'Demo (exemplo)';
 
   useEffect(() => {
     setWorkspaceId(workspaceId);
@@ -72,6 +78,132 @@ function App() {
       updateUrlWorkspace(ws);
     }
   }, [route]);
+
+  useEffect(() => {
+    if (!helpDismissed) {
+      setHelpOpen(true);
+    }
+  }, [helpDismissed]);
+
+  const ensureDemoMotoboy = useCallback(() => {
+    let demo = motoboys.find((m) => m.nome === DEMO_NAME);
+    if (!demo) demo = addMotoboy(DEMO_NAME);
+    return demo;
+  }, [motoboys, addMotoboy]);
+
+  const ensureDemoViagem = useCallback(() => {
+    const demo = ensureDemoMotoboy();
+    let viagem = viagens.find((v) => v.motoboyId === demo.id);
+    if (!viagem) viagem = openViagem(demo.id);
+    if (viagem.status !== 'aberta') {
+      reopenViagem(viagem.id);
+      viagem = { ...viagem, status: 'aberta', dataHoraVolta: null };
+    }
+    return { demo, viagem };
+  }, [ensureDemoMotoboy, viagens, openViagem, reopenViagem]);
+
+  const ensureDemoEntrega = useCallback(() => {
+    const { demo, viagem } = ensureDemoViagem();
+    let entrega = entregas.find((e) => e.viagemId === viagem.id);
+    if (!entrega) {
+      const criadas = addEntregasBulk(viagem.id, ['101', '102', '103']);
+      entrega = criadas[0];
+    }
+    return { demo, viagem, entrega };
+  }, [ensureDemoViagem, entregas, addEntregasBulk]);
+
+  const tourSteps = useMemo(() => ([
+    {
+      selector: '#searchInput',
+      title: 'Buscar pedidos',
+      description: 'Digite o numero do pedido para destacar todas as entregas com esse numero.',
+    },
+    {
+      selector: '#addMotoboyBtn',
+      title: 'Botao: adicionar motoboy',
+      description: 'Use + Motoboy para registrar um entregador.',
+    },
+    {
+      selector: '#motoboyName',
+      title: 'Modal: novo motoboy',
+      description: 'Preencha o nome e salve para criar o motoboy de exemplo.',
+    },
+    {
+      selector: '.add-leva-btn',
+      title: 'Botao: abrir viagem',
+      description: 'No card do motoboy, clique em + Viagem para abrir uma rota.',
+    },
+    {
+      selector: '#pedidosInput',
+      title: 'Modal: abrir viagem',
+      description: 'Adicione pedidos separados por linha ou virgula e salve.',
+    },
+    {
+      selector: '[data-tour="add-entrega-input"]',
+      title: 'Adicionar entregas',
+      description: 'Digite pedidos separados por linha ou virgula para incluir varios de uma vez.',
+    },
+    {
+      selector: '[data-tour="pedido-item"]',
+      title: 'Editar entrega',
+      description: 'Clique na entrega para mover, mudar status ou reabrir.',
+    },
+    {
+      selector: '#helpBtn',
+      title: 'Ajuda e tutorial',
+      description: 'Reabra este tutorial ou o guia rapido sempre que precisar.',
+    },
+  ]), []);
+
+  const handleTourStep = useCallback((stepIndex) => {
+    try {
+      // 0: busca; 1: botao motoboy; 2: modal motoboy; 3: botao viagem; 4: modal viagem; 5: add entrega; 6: editar entrega; 7: ajuda
+      if (stepIndex === 0) {
+        setAddMotoboyModalOpen(false);
+        setAddLevaModalOpen(false);
+        setEditPedidoModalOpen(false);
+      }
+      if (stepIndex === 1) {
+        setAddMotoboyModalOpen(false);
+        setAddLevaModalOpen(false);
+        setEditPedidoModalOpen(false);
+      }
+      if (stepIndex === 2) {
+        const demo = ensureDemoMotoboy();
+        setCurrentMotoboyId(demo.id);
+        setAddMotoboyModalOpen(true);
+      }
+      if (stepIndex === 3) {
+        const { demo } = ensureDemoViagem();
+        setCurrentMotoboyId(demo.id);
+        setAddMotoboyModalOpen(false);
+        setEditPedidoModalOpen(false);
+        setAddLevaModalOpen(false);
+      }
+      if (stepIndex === 4) {
+        const { demo } = ensureDemoViagem();
+        setCurrentMotoboyId(demo.id);
+        setAddMotoboyModalOpen(false);
+        setEditPedidoModalOpen(false);
+        setAddLevaModalOpen(true);
+      }
+      if (stepIndex === 5) {
+        const { demo } = ensureDemoViagem();
+        setCurrentMotoboyId(demo.id);
+        setAddLevaModalOpen(false);
+      }
+      if (stepIndex === 6) {
+        const { entrega } = ensureDemoEntrega();
+        setCurrentEntregaId(entrega.id);
+        setEditPedidoModalOpen(true);
+      }
+      if (stepIndex === 7) {
+        setHelpOpen(true);
+      }
+    } catch (err) {
+      console.error('Erro ao preparar passo do tutorial', err);
+    }
+  }, [ensureDemoMotoboy, ensureDemoViagem, ensureDemoEntrega]);
 
   const viagemById = useMemo(() => new Map(viagens.map((v) => [v.id, v])), [viagens]);
 
@@ -396,6 +528,10 @@ function App() {
           onImport={handleImport}
           activeFilter={hasSearch}
           syncStatus={syncStatus}
+          onOpenHelp={() => setHelpOpen(true)}
+          onStartTour={() => {
+            setTourOpen(true);
+          }}
         />
         <MotoboyContainer>
           {renderMotoboys()}
@@ -423,6 +559,26 @@ function App() {
         onSubmit={handleEditEntrega}
         entrega={currentEntrega}
         viagemOptions={viagemOptions}
+      />
+      <HelpModal
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        onDontShow={() => {
+          window.localStorage.setItem('helpDismissed', '1');
+          setHelpDismissed(true);
+          setHelpOpen(false);
+        }}
+      />
+      <Tour
+        isOpen={tourOpen}
+        steps={tourSteps}
+        onClose={() => {
+          setTourOpen(false);
+          setAddMotoboyModalOpen(false);
+          setAddLevaModalOpen(false);
+          setEditPedidoModalOpen(false);
+        }}
+        onStepChange={handleTourStep}
       />
     </div>
   );

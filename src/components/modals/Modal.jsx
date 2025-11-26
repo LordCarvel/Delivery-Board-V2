@@ -1,6 +1,6 @@
 import styles from './Modal.module.css';
 
-function Modal({ isOpen, title, onClose, onSubmit, children }) {
+function Modal({ isOpen, title, onClose, onSubmit, children, confirmLabel = 'Salvar', cancelLabel = 'Cancelar', hideCancel = false }) {
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
@@ -15,11 +15,13 @@ function Modal({ isOpen, title, onClose, onSubmit, children }) {
         <form onSubmit={handleSubmit}>
           {children}
           <div className={styles.modalActions}>
-            <button type="button" onClick={onClose} className="secondary-btn">
-              Cancelar
-            </button>
+            {!hideCancel && (
+              <button type="button" onClick={onClose} className="secondary-btn">
+                {cancelLabel}
+              </button>
+            )}
             <button type="submit" className="primary-btn">
-              Salvar
+              {confirmLabel}
             </button>
           </div>
         </form>

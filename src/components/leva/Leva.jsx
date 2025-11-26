@@ -85,6 +85,7 @@ function Leva({ viagem, onAddEntrega, onAddEntregas, onClose, onReopen, onDelete
             placeholder="Adicionar entrega (#pedido)"
             value={novoPedido}
             onChange={(e) => setNovoPedido(e.target.value)}
+            data-tour="add-entrega-input"
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();

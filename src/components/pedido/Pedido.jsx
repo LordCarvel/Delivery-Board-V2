@@ -15,6 +15,7 @@ function Pedido({ numeroPedido, statusEntrega = 'pendente', highlighted = false,
       className={styles.pedido}
       data-status={statusKey}
       data-highlighted={highlighted ? 'true' : 'false'}
+      data-tour="pedido-item"
       onClick={onClick}
       role="button"
       tabIndex={0}

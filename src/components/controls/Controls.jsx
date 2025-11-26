@@ -11,6 +11,8 @@ function Controls({
   onImport,
   activeFilter,
   syncStatus,
+  onOpenHelp,
+  onStartTour,
 }) {
   const [workspaceValue, setWorkspaceValue] = useState('');
   const importFileRef = useRef(null);
@@ -83,6 +85,20 @@ function Controls({
           onClick={handleCopyLink}
         >
           Copiar link
+        </button>
+        <button
+          id="helpBtn"
+          className="secondary-btn"
+          onClick={onOpenHelp}
+        >
+          Ajuda
+        </button>
+        <button
+          id="tourBtn"
+          className="secondary-btn"
+          onClick={onStartTour}
+        >
+          Tutorial guiado
         </button>
       </div>
       <div className={styles.workspaceGroup}>
