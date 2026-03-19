@@ -1,6 +1,6 @@
 {
   "type": "node-frontend",
-  "rootDir": "Front-End",
+  "rootDir": ".",
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDir": "dist"
