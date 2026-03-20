@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
-    "build": "node ./node_modules/vite/bin/vite.js build",
+    "build": "node ./scripts/build-for-delivery-hub.mjs",
     "lint": "eslint .",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "predeploy": "npm run build",

@@ -1,7 +1,7 @@
 {
   "type": "node-frontend",
   "rootDir": ".",
-  "installCommand": "npm install --include=dev",
+  "installCommand": "node -e \"console.log('Skipping dependency install for Delivery Hub build')\"",
   "buildCommand": "npm run build",
   "outputDir": "dist"
 }
