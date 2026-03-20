@@ -5,5 +5,5 @@ const isDeliveryHubBuild = process.env.DELIVERY_HUB === '1';
 
 export default defineConfig({
   plugins: [react()],
-  base: isDeliveryHubBuild ? '/' : '/Delivery-Board-V2/',
+  base: isDeliveryHubBuild ? './' : '/Delivery-Board-V2/',
 });

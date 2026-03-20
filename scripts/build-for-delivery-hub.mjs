@@ -8,6 +8,7 @@ const rootDir = process.cwd();
 const docsDir = path.join(rootDir, 'docs');
 const distDir = path.join(rootDir, 'dist');
 const viteCli = path.join(rootDir, 'node_modules', 'vite', 'bin', 'vite.js');
+const assetToken = '__DELIVERY_HUB_ASSETS__/';
 
 async function pathExists(targetPath) {
   try {
@@ -41,6 +42,15 @@ async function buildWithVite() {
   });
 }
 
+async function normalizeStaticHtml(targetPath) {
+  const html = await readFile(targetPath, 'utf8');
+  const normalized = html
+    .replaceAll('/Delivery-Board-V2/assets/', assetToken)
+    .replaceAll('/assets/', assetToken)
+    .replaceAll(assetToken, './assets/');
+  await writeFile(targetPath, normalized, 'utf8');
+}
+
 async function buildFromPrebuiltDocs() {
   const docsIndex = path.join(docsDir, 'index.html');
   if (!(await pathExists(docsIndex))) {
@@ -52,34 +62,25 @@ async function buildFromPrebuiltDocs() {
   await cp(docsDir, distDir, { recursive: true });
 
   const indexPath = path.join(distDir, 'index.html');
-  const indexHtml = await readFile(indexPath, 'utf8');
-  const deliveryHubHtml = indexHtml.replaceAll('/Delivery-Board-V2/assets/', '/assets/');
-  await writeFile(indexPath, deliveryHubHtml, 'utf8');
-
-  const fallback404 = `<!DOCTYPE html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Delivery Board</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script>
-      window.location.replace('/' + window.location.search + (window.location.hash || ''));
-    </script>
-  </head>
-  <body>
-    <p>Redirecionando...</p>
-  </body>
-</html>
-`;
-  await writeFile(path.join(distDir, '404.html'), fallback404, 'utf8');
+  await normalizeStaticHtml(indexPath);
+  await cp(indexPath, path.join(distDir, '404.html'), { force: true });
 
   console.log('Using prebuilt frontend snapshot from docs/.');
+}
+
+async function normalizeViteOutput() {
+  const indexPath = path.join(distDir, 'index.html');
+  if (await pathExists(indexPath)) {
+    await normalizeStaticHtml(indexPath);
+    await cp(indexPath, path.join(distDir, '404.html'), { force: true });
+  }
 }
 
 if (await pathExists(viteCli)) {
   console.log('Vite detected. Trying source build for Delivery Hub.');
   try {
     await buildWithVite();
+    await normalizeViteOutput();
   } catch (error) {
     console.warn(`Source build failed: ${error.message}`);
     console.warn('Falling back to the prebuilt frontend snapshot.');
