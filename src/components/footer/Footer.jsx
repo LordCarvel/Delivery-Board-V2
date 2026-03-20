@@ -1,9 +1,17 @@
 import styles from './Footer.module.css';
 
 function Footer() {
+  const currentYear = new Date().getFullYear();
+
   return (
     <footer className={styles.footer}>
-      <p>(c) 2025 - <a href="https://github.com/LordCarvel" target="_blank" rel="noopener noreferrer">LordCarvel</a> - Todos os direitos reservados.</p>
+      <div className={styles.content}>
+        <span className={styles.text}>Delivery Board</span>
+        <span className={styles.separator} />
+        <span className={styles.text}>Painel de Entregas</span>
+        <span className={styles.separator} />
+        <span className={styles.text}>© {currentYear} LordCarvel</span>
+      </div>
     </footer>
   );
 }

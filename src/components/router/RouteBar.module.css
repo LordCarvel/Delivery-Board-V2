@@ -2,75 +2,59 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: calc(var(--space-xs) + 2px) var(--space-lg);
-  gap: var(--space-sm);
-  background: linear-gradient(90deg, rgba(255,255,255,0.85), rgba(250,250,255,0.6));
-  border-bottom: 1px solid rgba(17,24,39,0.04);
-  box-shadow: 0 4px 14px rgba(2,6,23,0.03);
-  backdrop-filter: blur(4px);
+  min-height: 44px;
+  padding: 0 var(--space-lg);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(17, 24, 39, 0.05);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
-.left {
+.crumbs {
   display: flex;
+  gap: var(--space-xs);
   align-items: center;
-  gap: var(--space-sm);
+  overflow-x: auto;
 }
-
-.back {
-  background: transparent;
-  border: none;
-  font-size: 1.1rem;
-  width: 36px;
-  height: 36px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.back:hover { background: rgba(0,0,0,0.04); }
-
-.crumbs { display:flex; gap: var(--space-xs); align-items:center; }
 
 .crumb {
-  background: rgba(255,255,255,0.55);
-  border: 1px solid rgba(0,0,0,0.04);
+  background: transparent;
+  border: none;
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
   font-size: 0.82rem;
   color: var(--muted-text);
   cursor: pointer;
+  white-space: nowrap;
 }
-.crumb:hover { filter: brightness(0.98); transform: translateY(-1px); }
 
-.crumb { transition: transform 120ms ease, filter 120ms ease; }
-
-.openNew {
-  margin-left: var(--space-sm);
-  background: transparent;
-  border: 1px solid rgba(0,0,0,0.04);
-  padding: 0.25rem 0.5rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.92rem;
+.crumb:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--color-blue);
 }
-.openNew:hover { background: rgba(0,0,0,0.03); transform: translateY(-1px); }
 
-.right { display:flex; align-items:center; gap:var(--space-sm); }
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
 
 .routeBadge {
-  background: linear-gradient(90deg, rgba(119,162,232,0.15), rgba(254,228,64,0.08));
-  padding: 0.25rem 0.5rem;
-  border-radius: 6px;
+  background: rgba(119, 162, 232, 0.12);
+  color: var(--color-blue);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
   font-size: 0.78rem;
-  color: var(--muted-text);
-  border: 1px solid rgba(0,0,0,0.03);
+  border: 1px solid rgba(119, 162, 232, 0.16);
+  text-transform: capitalize;
 }
 
-.routeBadge { transition: transform 220ms cubic-bezier(.2,.9,.3,1); }
-.bar[data-route="motoboy"] .routeBadge { transform: translateY(-1px) scale(1.02); }
-
 @media (max-width: 720px) {
-  .crumb { display:none; }
-  .bar { padding: var(--space-xs) var(--space-md); }
+  .bar {
+    padding: 0 var(--space-md);
+  }
+
+  .routeBadge {
+    display: none;
+  }
 }

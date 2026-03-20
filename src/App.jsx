@@ -516,8 +516,8 @@ function App() {
   return (
     <div className="body">
       <Header />
-      <RouteBar />
       <main className="main-content">
+        <RouteBar />
         <Controls
           searchValue={searchQuery}
           onSearch={handleSearch}
