@@ -1,0 +1,98 @@
+{
+  "appId": "delivery-board",
+  "version": 1,
+  "publishes": {
+    "events": [
+      {
+        "name": "delivery_run_dispatched",
+        "entity": "DeliveryRun",
+        "idempotencyKey": "run:{sourceRunId}",
+        "payloadSchema": {
+          "sourceRunId": "string",
+          "courierId": "string",
+          "courierName": "string",
+          "operationalDate": "yyyy-MM-dd",
+          "dispatchedAt": "ISO-8601",
+          "orders": [
+            {
+              "hubOrderId": "string",
+              "sourceOrderId": "string",
+              "deliverySequence": "number"
+            }
+          ]
+        }
+      },
+      {
+        "name": "delivery_run_reverted",
+        "entity": "DeliveryRun",
+        "idempotencyKey": "run-revert:{sourceRunId}",
+        "payloadSchema": {
+          "sourceRunId": "string",
+          "operationalDate": "yyyy-MM-dd"
+        }
+      }
+    ],
+    "state": [
+      {
+        "name": "open_delivery_runs",
+        "entity": "DeliveryRun",
+        "mode": "snapshot"
+      }
+    ]
+  },
+  "consumes": {
+    "commands": [
+      {
+        "name": "create_whatsapp_dispatch_message",
+        "inputSchema": {
+          "sourceBranchId": "string",
+          "courierName": "string",
+          "orders": [
+            {
+              "sourceOrderId": "string",
+              "deliverySequence": "number"
+            }
+          ]
+        }
+      }
+    ],
+    "state": [
+      {
+        "name": "dispatchable_orders",
+        "entity": "SharedOrder",
+        "scope": "hub",
+        "filter": {
+          "status": [
+            "RECEIVED",
+            "READY_FOR_DISPATCH"
+          ]
+        }
+      }
+    ]
+  },
+  "examples": {
+    "delivery_run_dispatched": {
+      "event": "delivery_run_dispatched",
+      "appId": "delivery-board",
+      "payload": {
+        "sourceRunId": "ROTA-87",
+        "courierId": "MOTO-12",
+        "courierName": "Joao",
+        "operationalDate": "2026-03-24",
+        "dispatchedAt": "2026-03-25T00:18:00Z",
+        "orders": [
+          {
+            "hubOrderId": "HUB-ORDER-001",
+            "sourceOrderId": "EP-12345",
+            "deliverySequence": 1
+          },
+          {
+            "hubOrderId": "HUB-ORDER-002",
+            "sourceOrderId": "EP-12346",
+            "deliverySequence": 2
+          }
+        ]
+      }
+    }
+  }
+}
