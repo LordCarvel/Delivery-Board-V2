@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import Footer from './components/footer/Footer';
 import Header from './components/header/Header';
@@ -12,18 +12,39 @@ import AddMotoboyModal from './components/modals/AddMotoboy/AddMotoboyModal';
 import AddLevaModal from './components/modals/AddLeva/AddLevaModal';
 import EditPedidoModal from './components/modals/EditPedido/EditPedidoModal';
 import HelpModal from './components/modals/Help/HelpModal';
+import HubIntegrationModal from './components/modals/HubIntegration/HubIntegrationModal';
 import Tour from './components/tutorial/Tour';
 import { useDeliveryBoard } from './hooks/useDeliveryBoard';
 import { getWorkspaceId, setWorkspaceId, updateUrlWorkspace } from './utils/workspace';
 import { useRoute } from './router/Router';
 import { exportToJSON, importFromJSON } from './utils/fileOperations';
 import { parsePedidos } from './utils/dataHelpers';
+import {
+  acknowledgeHubCommand,
+  buildEntregaHubFields,
+  buildWhatsappCommandUrl,
+  findMatchingSharedOrder,
+  flushDeliveryHubPendingEvents,
+  getCachedHubCommands,
+  getCachedSharedOrders,
+  getDeliveryHubConfig,
+  getOperationalDate,
+  getPendingHubEvents,
+  publishDeliveryRunDispatched,
+  publishDeliveryRunReverted,
+  saveDeliveryHubConfig,
+  syncDeliveryHubState,
+} from './utils/deliveryHub';
 
 function formatShortTime(value) {
   if (!value) return '--:--';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function normalizePedidoToken(value) {
+  return String(value ?? '').trim().replace(/^#/, '');
 }
 
 function App() {
@@ -39,26 +60,38 @@ function App() {
     removeViagem,
     addEntrega,
     addEntregasBulk,
+    addEntregasDetailed,
     moveEntrega,
     updateEntrega,
+    updateViagem,
     setEntregaEntregue,
     removeEntrega,
     findEntregas,
     clearStore,
     replaceStore,
+    reconcileHubOrders,
     store,
   } = useDeliveryBoard();
 
   const [addMotoboyModalOpen, setAddMotoboyModalOpen] = useState(false);
   const [addLevaModalOpen, setAddLevaModalOpen] = useState(false);
   const [editPedidoModalOpen, setEditPedidoModalOpen] = useState(false);
+  const [hubModalOpen, setHubModalOpen] = useState(false);
 
   const [currentMotoboyId, setCurrentMotoboyId] = useState(null);
   const [currentEntregaId, setCurrentEntregaId] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIds, setHighlightedIds] = useState(new Set());
-  const syncStatus = 'idle';
+  const [hubConfig, setHubConfig] = useState(() => getDeliveryHubConfig());
+  const [hubSharedOrders, setHubSharedOrders] = useState(() => getCachedSharedOrders());
+  const [hubPendingCommands, setHubPendingCommands] = useState(() => getCachedHubCommands());
+  const [hubLastSyncAt, setHubLastSyncAt] = useState('');
+  const [hubLastError, setHubLastError] = useState('');
+  const [isHubSyncing, setIsHubSyncing] = useState(false);
+  const [pendingHubEventsCount, setPendingHubEventsCount] = useState(() => getPendingHubEvents().length);
+  const hubSyncInFlightRef = useRef(false);
+
   const workspaceId = getWorkspaceId();
   const route = useRoute();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -66,16 +99,58 @@ function App() {
   const [tourOpen, setTourOpen] = useState(false);
   const DEMO_NAME = 'Demo (exemplo)';
 
+  const refreshPendingHubEvents = useCallback(() => {
+    setPendingHubEventsCount(getPendingHubEvents().length);
+  }, []);
+
+  const syncHub = useCallback(async (overrideConfig) => {
+    const currentConfig = overrideConfig || hubConfig;
+
+    if (hubSyncInFlightRef.current) {
+      refreshPendingHubEvents();
+      return;
+    }
+
+    if (!currentConfig.enabled || !String(currentConfig.projectId || '').trim()) {
+      setHubLastError('');
+      setHubSharedOrders(getCachedSharedOrders());
+      setHubPendingCommands(getCachedHubCommands());
+      refreshPendingHubEvents();
+      return;
+    }
+
+    hubSyncInFlightRef.current = true;
+    setIsHubSyncing(true);
+
+    try {
+      await flushDeliveryHubPendingEvents(currentConfig);
+      const snapshot = await syncDeliveryHubState(currentConfig);
+      setHubSharedOrders(snapshot.sharedOrders || []);
+      setHubPendingCommands(
+        (snapshot.commands || []).filter((command) => command.command === 'create_whatsapp_dispatch_message')
+      );
+      setHubLastSyncAt(new Date().toISOString());
+      setHubLastError('');
+    } catch (error) {
+      setHubLastError(error?.message || 'Falha ao sincronizar com o Hub');
+    } finally {
+      refreshPendingHubEvents();
+      hubSyncInFlightRef.current = false;
+      setIsHubSyncing(false);
+    }
+  }, [hubConfig, refreshPendingHubEvents]);
+
   useEffect(() => {
     setWorkspaceId(workspaceId);
   }, [workspaceId]);
 
   useEffect(() => {
     if (!route) return;
+
     if (route.name === 'workspace' && route.params?.workspaceId) {
-      const ws = route.params.workspaceId;
-      setWorkspaceId(ws);
-      updateUrlWorkspace(ws);
+      const workspace = route.params.workspaceId;
+      setWorkspaceId(workspace);
+      updateUrlWorkspace(workspace);
     }
   }, [route]);
 
@@ -85,15 +160,42 @@ function App() {
     }
   }, [helpDismissed]);
 
+  useEffect(() => {
+    reconcileHubOrders(hubSharedOrders);
+  }, [entregas, hubSharedOrders, reconcileHubOrders]);
+
+  useEffect(() => {
+    if (!hubConfig.enabled || !String(hubConfig.projectId || '').trim()) {
+      return undefined;
+    }
+
+    void syncHub(hubConfig);
+
+    const timer = window.setInterval(() => {
+      void syncHub(hubConfig);
+    }, Number(hubConfig.pollIntervalSeconds || 20) * 1000);
+
+    return () => window.clearInterval(timer);
+  }, [hubConfig, syncHub]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      void syncHub(hubConfig);
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [hubConfig, syncHub]);
+
   const ensureDemoMotoboy = useCallback(() => {
-    let demo = motoboys.find((m) => m.nome === DEMO_NAME);
+    let demo = motoboys.find((motoboy) => motoboy.nome === DEMO_NAME);
     if (!demo) demo = addMotoboy(DEMO_NAME);
     return demo;
   }, [motoboys, addMotoboy]);
 
   const ensureDemoViagem = useCallback(() => {
     const demo = ensureDemoMotoboy();
-    let viagem = viagens.find((v) => v.motoboyId === demo.id);
+    let viagem = viagens.find((currentViagem) => currentViagem.motoboyId === demo.id);
     if (!viagem) viagem = openViagem(demo.id);
     if (viagem.status !== 'aberta') {
       reopenViagem(viagem.id);
@@ -104,10 +206,10 @@ function App() {
 
   const ensureDemoEntrega = useCallback(() => {
     const { demo, viagem } = ensureDemoViagem();
-    let entrega = entregas.find((e) => e.viagemId === viagem.id);
+    let entrega = entregas.find((currentEntrega) => currentEntrega.viagemId === viagem.id);
     if (!entrega) {
-      const criadas = addEntregasBulk(viagem.id, ['101', '102', '103']);
-      entrega = criadas[0];
+      const created = addEntregasBulk(viagem.id, ['101', '102', '103']);
+      entrega = created[0];
     }
     return { demo, viagem, entrega };
   }, [ensureDemoViagem, entregas, addEntregasBulk]);
@@ -157,13 +259,7 @@ function App() {
 
   const handleTourStep = useCallback((stepIndex) => {
     try {
-      // 0: busca; 1: botao motoboy; 2: modal motoboy; 3: botao viagem; 4: modal viagem; 5: add entrega; 6: editar entrega; 7: ajuda
-      if (stepIndex === 0) {
-        setAddMotoboyModalOpen(false);
-        setAddLevaModalOpen(false);
-        setEditPedidoModalOpen(false);
-      }
-      if (stepIndex === 1) {
+      if (stepIndex === 0 || stepIndex === 1) {
         setAddMotoboyModalOpen(false);
         setAddLevaModalOpen(false);
         setEditPedidoModalOpen(false);
@@ -200,34 +296,37 @@ function App() {
       if (stepIndex === 7) {
         setHelpOpen(true);
       }
-    } catch (err) {
-      console.error('Erro ao preparar passo do tutorial', err);
+    } catch (error) {
+      console.error('Erro ao preparar passo do tutorial', error);
     }
-  }, [ensureDemoMotoboy, ensureDemoViagem, ensureDemoEntrega]);
+  }, [ensureDemoEntrega, ensureDemoMotoboy, ensureDemoViagem]);
 
-  const viagemById = useMemo(() => new Map(viagens.map((v) => [v.id, v])), [viagens]);
+  const viagemById = useMemo(() => new Map(viagens.map((viagem) => [viagem.id, viagem])), [viagens]);
 
   const motoboyEntregaStats = useMemo(() => {
     const stats = new Map();
-    motoboys.forEach((m) => stats.set(m.id, { total: 0, entregues: 0 }));
-    entregas.forEach((e) => {
-      const viagem = viagemById.get(e.viagemId);
+    motoboys.forEach((motoboy) => stats.set(motoboy.id, { total: 0, entregues: 0 }));
+
+    entregas.forEach((entrega) => {
+      const viagem = viagemById.get(entrega.viagemId);
       if (!viagem) return;
-      const mid = viagem.motoboyId;
-      if (!stats.has(mid)) stats.set(mid, { total: 0, entregues: 0 });
-      const entry = stats.get(mid);
+
+      const motoboyId = viagem.motoboyId;
+      if (!stats.has(motoboyId)) stats.set(motoboyId, { total: 0, entregues: 0 });
+      const entry = stats.get(motoboyId);
       entry.total += 1;
-      if (e.statusEntrega === 'entregue') entry.entregues += 1;
+      if (entrega.statusEntrega === 'entregue') entry.entregues += 1;
     });
+
     return stats;
   }, [motoboys, entregas, viagemById]);
 
   const viagensByMotoboy = useMemo(() => {
     const map = new Map();
-    motoboys.forEach((m) => map.set(m.id, []));
-    viagens.forEach((v) => {
-      if (!map.has(v.motoboyId)) map.set(v.motoboyId, []);
-      map.get(v.motoboyId).push(v);
+    motoboys.forEach((motoboy) => map.set(motoboy.id, []));
+    viagens.forEach((viagem) => {
+      if (!map.has(viagem.motoboyId)) map.set(viagem.motoboyId, []);
+      map.get(viagem.motoboyId).push(viagem);
     });
     map.forEach((list) => list.sort((a, b) => new Date(b.dataHoraSaida) - new Date(a.dataHoraSaida)));
     return map;
@@ -235,42 +334,72 @@ function App() {
 
   const entregasByViagem = useMemo(() => {
     const map = new Map();
-    viagens.forEach((v) => map.set(v.id, []));
-    entregas.forEach((e) => {
-      const list = map.get(e.viagemId) || [];
-      list.push(e);
-      map.set(e.viagemId, list);
+    viagens.forEach((viagem) => map.set(viagem.id, []));
+    entregas.forEach((entrega) => {
+      const list = map.get(entrega.viagemId) || [];
+      list.push(entrega);
+      map.set(entrega.viagemId, list);
     });
     return map;
   }, [viagens, entregas]);
 
-  const viagemOptions = useMemo(() => viagens.map((v) => {
-    const motoboyName = motoboys.find((m) => m.id === v.motoboyId)?.nome || 'Motoboy';
-    return { value: v.id, label: `${motoboyName} - ${formatShortTime(v.dataHoraSaida)} (${v.status})` };
+  const viagemOptions = useMemo(() => viagens.map((viagem) => {
+    const motoboyName = motoboys.find((motoboy) => motoboy.id === viagem.motoboyId)?.nome || 'Motoboy';
+    return { value: viagem.id, label: `${motoboyName} - ${formatShortTime(viagem.dataHoraSaida)} (${viagem.status})` };
   }), [viagens, motoboys]);
 
-  const currentEntrega = useMemo(() => entregas.find((e) => e.id === currentEntregaId) || null, [entregas, currentEntregaId]);
+  const currentEntrega = useMemo(
+    () => entregas.find((entrega) => entrega.id === currentEntregaId) || null,
+    [entregas, currentEntregaId]
+  );
+
+  const hubSyncState = useMemo(() => ({
+    isSyncing: isHubSyncing,
+    lastSyncAt: hubLastSyncAt,
+    lastError: hubLastError,
+    sharedOrders: hubSharedOrders,
+    pendingCommands: hubPendingCommands,
+    pendingEventsCount: pendingHubEventsCount,
+  }), [hubLastError, hubLastSyncAt, hubPendingCommands, hubSharedOrders, isHubSyncing, pendingHubEventsCount]);
+
+  const syncStatus = useMemo(() => {
+    if (!hubConfig.enabled) return 'hub-off';
+    if (!String(hubConfig.projectId || '').trim()) return 'config';
+    if (isHubSyncing) return 'syncing';
+    if (hubLastError) return 'erro';
+    return `ok/${hubPendingCommands.length} cmd`;
+  }, [hubConfig.enabled, hubConfig.projectId, hubLastError, hubPendingCommands.length, isHubSyncing]);
+
+  const buildHubOptsForPedido = useCallback((pedido) => {
+    const sharedOrder = findMatchingSharedOrder(hubSharedOrders, pedido);
+    return buildEntregaHubFields(sharedOrder);
+  }, [hubSharedOrders]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
       setHighlightedIds(new Set());
       return;
     }
+
     const matches = findEntregas(searchQuery.trim());
-    setHighlightedIds(new Set(matches.map((m) => m.id)));
+    setHighlightedIds(new Set(matches.map((item) => item.id)));
   }, [searchQuery, findEntregas]);
 
   const filterContext = useMemo(() => {
     if (!searchQuery.trim() || highlightedIds.size === 0) return null;
+
     const viagemIds = new Set();
     const motoboyIds = new Set();
+
     highlightedIds.forEach((entregaId) => {
-      const entrega = entregas.find((e) => e.id === entregaId);
+      const entrega = entregas.find((item) => item.id === entregaId);
       if (!entrega) return;
+
       viagemIds.add(entrega.viagemId);
-      const v = viagemById.get(entrega.viagemId);
-      if (v) motoboyIds.add(v.motoboyId);
+      const viagem = viagemById.get(entrega.viagemId);
+      if (viagem) motoboyIds.add(viagem.motoboyId);
     });
+
     return { viagemIds, motoboyIds };
   }, [searchQuery, highlightedIds, entregas, viagemById]);
 
@@ -278,31 +407,45 @@ function App() {
     try {
       addMotoboy(motoboyName);
       setAddMotoboyModalOpen(false);
-    } catch (err) {
-      window.alert(err.message || 'Erro ao adicionar motoboy');
+    } catch (error) {
+      window.alert(error.message || 'Erro ao adicionar motoboy');
     }
   };
 
   const checkCancelados = (pedidosList = []) => {
+    const normalized = pedidosList.map(normalizePedidoToken);
     const cancelados = entregas.filter(
-      (e) => pedidosList.includes(e.numeroPedido) && e.statusEntrega === 'cancelado',
+      (entrega) => normalized.includes(normalizePedidoToken(entrega.numeroPedido)) && entrega.statusEntrega === 'cancelado'
     );
+
     if (!cancelados.length) return true;
-    const lista = cancelados.map((e) => `#${e.numeroPedido}`).join(', ');
+
+    const lista = cancelados.map((entrega) => `#${normalizePedidoToken(entrega.numeroPedido)}`).join(', ');
     return window.confirm(`Pedidos ${lista} estao marcados como cancelados. Deseja continuar?`);
   };
 
   const addPedidosToViagem = (viagemId, pedidosList = []) => {
     if (!pedidosList.length) return;
     if (!checkCancelados(pedidosList)) return;
+
     try {
-      if (pedidosList.length === 1) {
-        addEntrega(viagemId, pedidosList[0]);
+      const items = pedidosList
+        .map((pedido) => normalizePedidoToken(pedido))
+        .filter(Boolean)
+        .map((numeroPedido) => ({
+          numeroPedido,
+          opts: buildHubOptsForPedido(numeroPedido),
+        }));
+
+      if (!items.length) return;
+
+      if (items.length === 1) {
+        addEntrega(viagemId, items[0].numeroPedido, items[0].opts);
       } else {
-        addEntregasBulk(viagemId, pedidosList);
+        addEntregasDetailed(viagemId, items);
       }
-    } catch (err) {
-      window.alert(err.message || 'Erro ao adicionar entrega');
+    } catch (error) {
+      window.alert(error.message || 'Erro ao adicionar entrega');
     }
   };
 
@@ -311,21 +454,26 @@ function App() {
       window.alert('Selecione um motoboy antes de abrir uma viagem');
       return;
     }
+
     if (!pedidos.length) {
       window.alert('Informe ao menos um pedido');
       return;
     }
+
     if (!checkCancelados(pedidos)) return;
+
     try {
-      const motoboyExiste = motoboys.find((m) => m.id === currentMotoboyId);
+      const motoboyExiste = motoboys.find((motoboy) => motoboy.id === currentMotoboyId);
       if (!motoboyExiste) throw new Error('Motoboy nao encontrado');
+
       const viagem = openViagem(currentMotoboyId);
-      if (!viagem || !viagem.id) throw new Error('Falha ao criar viagem');
+      if (!viagem?.id) throw new Error('Falha ao criar viagem');
+
       addPedidosToViagem(viagem.id, pedidos);
       setAddLevaModalOpen(false);
       setCurrentMotoboyId(null);
-    } catch (err) {
-      window.alert(err.message || 'Erro ao criar viagem');
+    } catch (error) {
+      window.alert(error.message || 'Erro ao criar viagem');
     }
   };
 
@@ -339,8 +487,52 @@ function App() {
     removeViagem(viagemId, { cascade: true });
   };
 
-  const handleReopenViagem = (viagemId) => {
+  const handleCloseViagem = async (viagemId) => {
+    const viagem = viagens.find((item) => item.id === viagemId);
+    const motoboy = motoboys.find((item) => item.id === viagem?.motoboyId);
+    const entregasDaViagem = entregasByViagem.get(viagemId) || [];
+
+    closeViagem(viagemId);
+
+    if (!viagem || !motoboy) return;
+
+    const result = await publishDeliveryRunDispatched(hubConfig, {
+      viagem,
+      motoboy,
+      entregas: entregasDaViagem,
+      sharedOrders: hubSharedOrders,
+    });
+
+    if (result?.sourceRunId && result?.nextSequence) {
+      updateViagem(viagemId, {
+        hubDispatchSequence: result.nextSequence,
+        lastHubSourceRunId: result.sourceRunId,
+      });
+    }
+
+    refreshPendingHubEvents();
+
+    if (hubConfig.enabled && String(hubConfig.projectId || '').trim()) {
+      void syncHub(hubConfig);
+    }
+  };
+
+  const handleReopenViagem = async (viagemId) => {
+    const viagem = viagens.find((item) => item.id === viagemId);
     reopenViagem(viagemId);
+
+    if (!viagem?.lastHubSourceRunId) return;
+
+    await publishDeliveryRunReverted(hubConfig, {
+      sourceRunId: viagem.lastHubSourceRunId,
+      operationalDate: getOperationalDate(viagem.dataHoraSaida || new Date()),
+    });
+
+    refreshPendingHubEvents();
+
+    if (hubConfig.enabled && String(hubConfig.projectId || '').trim()) {
+      void syncHub(hubConfig);
+    }
   };
 
   const handleDeleteMotoboy = (motoboyId) => {
@@ -358,7 +550,7 @@ function App() {
       return;
     }
 
-    const entregaAlvo = entregas.find((e) => e.id === currentEntregaId);
+    const entregaAlvo = entregas.find((entrega) => entrega.id === currentEntregaId);
     if (!entregaAlvo) return;
 
     try {
@@ -367,9 +559,12 @@ function App() {
       }
 
       const updates = {};
-      if (data.numeroPedido && data.numeroPedido !== entregaAlvo.numeroPedido) {
-        updates.numeroPedido = data.numeroPedido;
+
+      if (data.numeroPedido && normalizePedidoToken(data.numeroPedido) !== normalizePedidoToken(entregaAlvo.numeroPedido)) {
+        updates.numeroPedido = normalizePedidoToken(data.numeroPedido);
+        Object.assign(updates, buildHubOptsForPedido(data.numeroPedido));
       }
+
       if (data.statusEntrega === 'entregue') {
         setEntregaEntregue(currentEntregaId);
       } else if (data.statusEntrega && data.statusEntrega !== entregaAlvo.statusEntrega) {
@@ -382,8 +577,8 @@ function App() {
 
       setEditPedidoModalOpen(false);
       setCurrentEntregaId(null);
-    } catch (err) {
-      window.alert(err.message || 'Erro ao editar entrega');
+    } catch (error) {
+      window.alert(error.message || 'Erro ao editar entrega');
     }
   };
 
@@ -427,13 +622,69 @@ function App() {
     }
   };
 
+  const handleSaveHubConfig = (value) => {
+    const saved = saveDeliveryHubConfig(value);
+    setHubConfig(saved);
+    refreshPendingHubEvents();
+
+    if (saved.enabled && String(saved.projectId || '').trim()) {
+      void syncHub(saved);
+    } else {
+      setHubLastError('');
+    }
+  };
+
+  const handleAcknowledgeHubCommand = async (command) => {
+    if (!command?.id) return;
+
+    try {
+      await acknowledgeHubCommand(hubConfig, command.id);
+      setHubPendingCommands((prev) => prev.filter((item) => item.id !== command.id));
+      setHubLastError('');
+    } catch (error) {
+      setHubLastError(error?.message || 'Falha ao confirmar comando');
+    }
+  };
+
+  const handleCopyHubCommand = async (command) => {
+    const text = String(command?.payload?.messageText || '').trim();
+
+    if (!text) {
+      window.alert('Esse comando nao trouxe mensagem para copiar.');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        window.prompt('Copie a mensagem abaixo:', text);
+      }
+      await handleAcknowledgeHubCommand(command);
+    } catch {
+      window.prompt('Copie a mensagem abaixo:', text);
+    }
+  };
+
+  const handleOpenWhatsappCommand = async (command) => {
+    const url = buildWhatsappCommandUrl(command);
+
+    if (!url) {
+      window.alert('Esse comando nao possui numero configurado no Hub.');
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+    await handleAcknowledgeHubCommand(command);
+  };
+
   const hasSearch = Boolean(searchQuery.trim());
   const hasResults = highlightedIds.size > 0;
   const shouldFilter = hasSearch && hasResults && filterContext;
 
   const motoboysToRender = useMemo(() => {
     if (!shouldFilter || !filterContext) return motoboys;
-    return motoboys.filter((m) => filterContext.motoboyIds.has(m.id));
+    return motoboys.filter((motoboy) => filterContext.motoboyIds.has(motoboy.id));
   }, [motoboys, shouldFilter, filterContext]);
 
   const renderMotoboys = () => {
@@ -448,7 +699,7 @@ function App() {
     return motoboysToRender.map((motoboy) => {
       const viagensDoMotoboy = viagensByMotoboy.get(motoboy.id) || [];
       const viagensParaRender = shouldFilter && filterContext
-        ? viagensDoMotoboy.filter((v) => filterContext.viagemIds.has(v.id))
+        ? viagensDoMotoboy.filter((viagem) => filterContext.viagemIds.has(viagem.id))
         : viagensDoMotoboy;
 
       if (shouldFilter && filterContext && viagensParaRender.length === 0) {
@@ -473,7 +724,7 @@ function App() {
           {viagensParaRender.map((viagem) => {
             const entregasDaViagem = entregasByViagem.get(viagem.id) || [];
             const entregasParaRender = shouldFilter && filterContext
-              ? entregasDaViagem.filter((e) => highlightedIds.has(e.id))
+              ? entregasDaViagem.filter((entrega) => highlightedIds.has(entrega.id))
               : entregasDaViagem;
 
             return (
@@ -482,8 +733,12 @@ function App() {
                 viagem={viagem}
                 onAddEntrega={(numeroPedido) => handleAddEntregaToViagem(viagem.id, numeroPedido)}
                 onAddEntregas={(lista) => handleAddEntregaToViagem(viagem.id, lista)}
-                onClose={() => closeViagem(viagem.id)}
-                onReopen={() => handleReopenViagem(viagem.id)}
+                onClose={() => {
+                  void handleCloseViagem(viagem.id);
+                }}
+                onReopen={() => {
+                  void handleReopenViagem(viagem.id);
+                }}
                 onDelete={() => handleDeleteViagem(viagem.id)}
               >
                 {entregasParaRender.map((entrega) => (
@@ -492,6 +747,8 @@ function App() {
                     numeroPedido={entrega.numeroPedido}
                     statusEntrega={entrega.statusEntrega}
                     highlighted={highlightedIds.has(entrega.id)}
+                    externalOrigin={Boolean(entrega.externalOrigin)}
+                    originLabel={entrega.sourceBranchName || entrega.sourceStoreName || ''}
                     onClick={() => {
                       setCurrentEntregaId(entrega.id);
                       setEditPedidoModalOpen(true);
@@ -532,6 +789,7 @@ function App() {
           onStartTour={() => {
             setTourOpen(true);
           }}
+          onOpenHub={() => setHubModalOpen(true)}
         />
         <MotoboyContainer>
           {renderMotoboys()}
@@ -545,13 +803,16 @@ function App() {
         onSubmit={handleAddMotoboy}
       />
       <AddLevaModal
+        key={`${addLevaModalOpen ? 'open' : 'closed'}:${currentMotoboyId || 'none'}`}
         isOpen={addLevaModalOpen}
         onClose={() => setAddLevaModalOpen(false)}
         onSubmit={handleAddLeva}
         title="Abrir viagem"
         canceladosLookup={(pedidosList) => entregas
-          .filter((e) => pedidosList.includes(e.numeroPedido) && e.statusEntrega === 'cancelado')
-          .map((e) => e.numeroPedido)}
+          .filter((entrega) =>
+            pedidosList.map(normalizePedidoToken).includes(normalizePedidoToken(entrega.numeroPedido))
+            && entrega.statusEntrega === 'cancelado')
+          .map((entrega) => normalizePedidoToken(entrega.numeroPedido))}
       />
       <EditPedidoModal
         isOpen={editPedidoModalOpen}
@@ -559,6 +820,29 @@ function App() {
         onSubmit={handleEditEntrega}
         entrega={currentEntrega}
         viagemOptions={viagemOptions}
+      />
+      <HubIntegrationModal
+        key={`${hubModalOpen ? 'open' : 'closed'}:${hubConfig.enabled}:${hubConfig.baseUrl}:${hubConfig.projectId}:${hubConfig.pollIntervalSeconds}`}
+        isOpen={hubModalOpen}
+        onClose={() => setHubModalOpen(false)}
+        config={hubConfig}
+        syncState={hubSyncState}
+        onSave={handleSaveHubConfig}
+        onSync={() => {
+          void syncHub(hubConfig);
+        }}
+        onFlush={() => {
+          void syncHub(hubConfig);
+        }}
+        onCopyCommand={(command) => {
+          void handleCopyHubCommand(command);
+        }}
+        onOpenWhatsapp={(command) => {
+          void handleOpenWhatsappCommand(command);
+        }}
+        onAcknowledgeCommand={(command) => {
+          void handleAcknowledgeHubCommand(command);
+        }}
       />
       <HelpModal
         isOpen={helpOpen}
@@ -570,6 +854,7 @@ function App() {
         }}
       />
       <Tour
+        key={tourOpen ? 'tour-open' : 'tour-closed'}
         isOpen={tourOpen}
         steps={tourSteps}
         onClose={() => {
@@ -577,6 +862,7 @@ function App() {
           setAddMotoboyModalOpen(false);
           setAddLevaModalOpen(false);
           setEditPedidoModalOpen(false);
+          setHubModalOpen(false);
         }}
         onStepChange={handleTourStep}
       />

@@ -5,7 +5,7 @@ function parseHash(hash) {
   if (!h || h === '/' || h === '') return { name: 'home', params: {} };
 
   // /workspace/:id
-  const wsMatch = h.match(/^\/workspace\/([^\/]+)\/?$/) || h.match(/^\/workspace\/([^\/]+)$/);
+  const wsMatch = h.match(/^\/workspace\/([^/]+)\/?$/) || h.match(/^\/workspace\/([^/]+)$/);
   if (wsMatch) return { name: 'workspace', params: { workspaceId: wsMatch[1] } };
 
   // /motoboy/:idx[/leva/:l/pedido/:p]

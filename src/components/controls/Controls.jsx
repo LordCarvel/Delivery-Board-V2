@@ -13,6 +13,7 @@ function Controls({
   syncStatus,
   onOpenHelp,
   onStartTour,
+  onOpenHub,
 }) {
   const [workspaceValue, setWorkspaceValue] = useState('');
   const importFileRef = useRef(null);
@@ -40,7 +41,7 @@ function Controls({
     try {
       navigator.clipboard.writeText(link);
       window.alert('Link copiado para a area de transferencia');
-    } catch (e) {
+    } catch {
       window.prompt('Copie o link abaixo:', link);
     }
   };
@@ -85,6 +86,13 @@ function Controls({
           onClick={handleCopyLink}
         >
           Copiar link
+        </button>
+        <button
+          id="hubBtn"
+          className="secondary-btn"
+          onClick={onOpenHub}
+        >
+          Hub
         </button>
         <button
           id="helpBtn"

@@ -7,24 +7,35 @@ const STATUS_LABELS = {
   cancelado: 'cancelado',
 };
 
-function Pedido({ numeroPedido, statusEntrega = 'pendente', highlighted = false, onClick, onReopen }) {
+function Pedido({
+  numeroPedido,
+  statusEntrega = 'pendente',
+  highlighted = false,
+  externalOrigin = false,
+  originLabel = '',
+  onClick,
+  onReopen,
+}) {
   const statusKey = STATUS_LABELS[statusEntrega] || 'pendente';
+  const normalizedNumber = String(numeroPedido || '').replace(/^#/, '');
+  const branchLabel = originLabel || 'Outra filial';
 
   return (
     <div
       className={styles.pedido}
       data-status={statusKey}
       data-highlighted={highlighted ? 'true' : 'false'}
+      data-external={externalOrigin ? 'true' : 'false'}
       data-tour="pedido-item"
       onClick={onClick}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
           onClick?.();
         }
-        if (e.key === 'r' && statusKey !== 'pendente') {
+        if (event.key === 'r' && statusKey !== 'pendente') {
           onReopen?.();
         }
       }}
@@ -32,19 +43,26 @@ function Pedido({ numeroPedido, statusEntrega = 'pendente', highlighted = false,
         if (statusKey !== 'pendente') onReopen?.();
       }}
     >
-      <span className={styles.numero}>#{numeroPedido}</span>
+      <div className={styles.mainInfo}>
+        <span className={styles.numero}>#{normalizedNumber}</span>
+        {externalOrigin && (
+          <span className={styles.branchBadge} title={branchLabel}>
+            {branchLabel}
+          </span>
+        )}
+      </div>
       <span className={styles.status}>{statusKey}</span>
       {statusKey !== 'pendente' && (
         <button
           type="button"
           className={styles.reopen}
           title="Reabrir (voltar para pendente)"
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={(event) => {
+            event.stopPropagation();
             onReopen?.();
           }}
         >
-          ↺
+          R
         </button>
       )}
     </div>

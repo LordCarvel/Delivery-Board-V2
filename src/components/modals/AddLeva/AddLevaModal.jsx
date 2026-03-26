@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Modal from '../Modal';
 import { parsePedidos } from '../../../utils/dataHelpers';
 
@@ -11,12 +11,6 @@ function AddLevaModal({ isOpen, onClose, onSubmit, title = 'Adicionar Viagem', c
     if (!canceladosLookup) return [];
     return canceladosLookup(pedidos);
   }, [canceladosLookup, pedidos]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setInputValue('');
-    }
-  }, [isOpen]);
 
   const handleSubmit = (e) => {
     e.preventDefault();

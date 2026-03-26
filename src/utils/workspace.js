@@ -2,9 +2,11 @@ export function getWorkspaceId() {
   // Prefer hash route like #/workspace/:id, fallback to ?ws= or localStorage
   try {
     const hash = location.hash || '';
-    const m = hash.match(/#\/workspace\/([^\/\?]+)/);
+    const m = hash.match(/#\/workspace\/([^/?]+)/);
     if (m && m[1]) return m[1];
-  } catch (e) {}
+  } catch {
+    // Ignore malformed location state and use the fallback chain below.
+  }
   const ws = new URLSearchParams(location.search).get('ws');
   const stored = localStorage.getItem('workspaceId');
   return ws || stored || 'default';
@@ -23,9 +25,13 @@ export function updateUrlWorkspace(wsId) {
     const base = location.pathname + (newSearch ? `?${newSearch}` : '');
     // Replace search without reloading by using history API
     history.replaceState(null, '', base + location.hash);
-  } catch (e) {}
+  } catch {
+    // Ignore history API failures and still try to write the hash route below.
+  }
   try {
     // Also set hash route for direct linking
     location.hash = `#/workspace/${wsId}`;
-  } catch (e) {}
+  } catch {
+    // Ignore hash navigation failures.
+  }
 }

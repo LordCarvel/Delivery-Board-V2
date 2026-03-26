@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import { useLocalStorage } from './useLocalStorage';
 import domain, { emptyStore } from '../core/domain';
+import { reconcileEntregasWithSharedOrders } from '../utils/deliveryHub';
 
 function coerceStoreShape(candidate) {
   if (!candidate || typeof candidate !== 'object') return { ...emptyStore };
@@ -127,6 +128,27 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
     return created;
   }, [setStore]);
 
+  const addEntregasDetailed = useCallback((viagemId, items = []) => {
+    const created = [];
+    setStore((prev) => {
+      const current = prev || emptyStore;
+      const viagem = (current.viagens || []).find((v) => v.id === viagemId);
+      if (!viagem) throw new Error('Viagem nao encontrada');
+      if (viagem.status !== 'aberta') throw new Error('Nao eh possivel adicionar entrega a uma viagem fechada');
+
+      let updatedStore = { ...current };
+      items.forEach((item) => {
+        if (!item?.numeroPedido) return;
+        const entrega = domain.createEntrega(viagemId, item.numeroPedido, item.opts || {});
+        created.push(entrega);
+        updatedStore = domain.addEntregaToStore(updatedStore, entrega);
+      });
+
+      return updatedStore;
+    });
+    return created;
+  }, [setStore]);
+
   const removeViagem = useCallback((viagemId, options = { cascade: true }) => {
     setStore((prev) => domain.removeViagemFromStore(prev || emptyStore, viagemId, options));
   }, [setStore]);
@@ -135,6 +157,13 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
     setStore((prev) => {
       const current = prev || emptyStore;
       return { ...current, entregas: domain.updateEntrega(current.entregas || [], entregaId, changes) };
+    });
+  }, [setStore]);
+
+  const updateViagem = useCallback((viagemId, changes = {}) => {
+    setStore((prev) => {
+      const current = prev || emptyStore;
+      return { ...current, viagens: domain.updateViagem(current.viagens || [], viagemId, changes) };
     });
   }, [setStore]);
 
@@ -172,6 +201,22 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
     setStore(() => coerceStoreShape(incomingStore));
   }, [setStore]);
 
+  const reconcileHubOrders = useCallback((sharedOrders = []) => {
+    setStore((prev) => {
+      const current = prev || emptyStore;
+      const nextEntregas = reconcileEntregasWithSharedOrders(current.entregas || [], sharedOrders);
+
+      if (nextEntregas === current.entregas) {
+        return current;
+      }
+
+      return {
+        ...current,
+        entregas: nextEntregas,
+      };
+    });
+  }, [setStore]);
+
   const getMotoboys = store?.motoboys || [];
   const getViagens = store?.viagens || [];
   const getEntregas = store?.entregas || [];
@@ -190,14 +235,17 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
     reopenViagem,
     addEntrega,
     addEntregasBulk,
+    addEntregasDetailed,
     removeViagem,
     updateEntrega,
+    updateViagem,
     moveEntrega,
     setEntregaEntregue,
     removeEntrega,
     findEntregas,
     clearStore,
     replaceStore,
+    reconcileHubOrders,
 
     // raw store access (if needed)
     store,

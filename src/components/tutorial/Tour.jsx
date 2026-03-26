@@ -62,11 +62,6 @@ function Tour({ isOpen, steps = [], onClose, onStepChange }) {
 
   useEffect(() => {
     if (!isOpen) return;
-    setIndex(0);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
     onStepChange?.(index);
   }, [index, isOpen, onStepChange]);
 

@@ -7,6 +7,12 @@ function generateId(prefix = '') {
   return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizeOrderNumber(numeroPedido) {
+  return String(numeroPedido ?? '')
+    .trim()
+    .replace(/^#/, '');
+}
+
 // Factories
 export function createMotoboy(nome) {
   if (!nome || !String(nome).trim()) throw new Error('Nome do motoboy e obrigatorio');
@@ -26,6 +32,10 @@ export function createViagem(motoboyId, opts = {}) {
     dataHoraSaida: now,
     dataHoraVolta: null,
     status: 'aberta', // 'aberta' | 'fechada'
+    hubDispatchSequence: Number.isFinite(Number(opts.hubDispatchSequence))
+      ? Number(opts.hubDispatchSequence)
+      : 0,
+    lastHubSourceRunId: opts.lastHubSourceRunId || null,
   };
 }
 
@@ -49,19 +59,25 @@ export function createEntrega(viagemId, numeroPedido, opts = {}) {
   return {
     id: generateId('e_'),
     viagemId,
-    numeroPedido: String(numeroPedido).trim(),
+    numeroPedido: normalizeOrderNumber(numeroPedido),
     origem: opts.origem || null,
     valor: opts.valor ?? null,
     statusEntrega: opts.statusEntrega || 'pendente', // 'pendente' | 'entregue'
     observacoes: opts.observacoes || null,
+    hubOrderId: opts.hubOrderId || null,
+    sourceApp: opts.sourceApp || null,
+    sourceBranchId: opts.sourceBranchId || null,
+    sourceBranchName: opts.sourceBranchName || null,
+    sourceStoreName: opts.sourceStoreName || null,
+    externalOrigin: Boolean(opts.externalOrigin || opts.hubOrderId || opts.sourceBranchId || opts.sourceBranchName),
   };
 }
 
 // Pure helpers / queries
 export function findEntregasByNumero(entregas = [], numeroPedido) {
   if (numeroPedido === undefined || numeroPedido === null) return [];
-  const search = String(numeroPedido).trim();
-  return entregas.filter((ent) => String(ent.numeroPedido).trim() === search);
+  const search = normalizeOrderNumber(numeroPedido);
+  return entregas.filter((ent) => normalizeOrderNumber(ent.numeroPedido) === search);
 }
 
 export function getViagensByMotoboy(viagens = [], motoboyId) {
@@ -95,7 +111,16 @@ export function removeViagemFromStore(store, viagemId, options = { cascade: true
 }
 
 export function updateEntrega(entregas = [], entregaId, changes = {}) {
-  return entregas.map((e) => (e.id === entregaId ? { ...e, ...changes } : e));
+  return entregas.map((e) => {
+    if (e.id !== entregaId) return e;
+
+    const nextChanges = { ...changes };
+    if (Object.hasOwn(nextChanges, 'numeroPedido')) {
+      nextChanges.numeroPedido = normalizeOrderNumber(nextChanges.numeroPedido);
+    }
+
+    return { ...e, ...nextChanges };
+  });
 }
 
 export function updateEntregaStatus(entregas = [], entregaId, newStatus) {
@@ -104,6 +129,10 @@ export function updateEntregaStatus(entregas = [], entregaId, newStatus) {
 
 export function removeEntregaFromStore(store, entregaId) {
   return { ...store, entregas: (store.entregas || []).filter((e) => e.id !== entregaId) };
+}
+
+export function updateViagem(viagens = [], viagemId, changes = {}) {
+  return viagens.map((viagem) => (viagem.id === viagemId ? { ...viagem, ...changes } : viagem));
 }
 
 export function removeMotoboy(store, motoboyId, options = { cascade: false }) {
@@ -139,5 +168,6 @@ export default {
   updateEntrega,
   updateEntregaStatus,
   removeEntregaFromStore,
+  updateViagem,
   removeMotoboy,
 };
