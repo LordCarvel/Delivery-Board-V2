@@ -117,6 +117,39 @@ function HubIntegrationModal({
       <div className={styles.statusBox} data-error={syncState.lastError ? 'true' : 'false'}>
         <div>Ultimo sync: {formatDateTime(syncState.lastSyncAt)}</div>
         {syncState.lastError ? <div>Erro: {syncState.lastError}</div> : <div>Pronto para publicar rodas e consumir comandos.</div>}
+        {syncState.publishFeedback ? (
+          <div className={styles.statusInline} data-tone={syncState.publishFeedback.tone || 'info'}>
+            Ultima publicacao: {syncState.publishFeedback.message}
+          </div>
+        ) : null}
+      </div>
+
+      <div className={styles.commandSection}>
+        <div className={styles.sectionTitle}>Fila local de publicacao</div>
+
+        {syncState.pendingEvents?.length ? (
+          <div className={styles.pendingEventList}>
+            {syncState.pendingEvents.map((event) => (
+              <div key={event.queueKey} className={styles.pendingEventCard}>
+                <div className={styles.commandHeader}>
+                  <strong>{event.event || 'evento pendente'}</strong>
+                  <span>{event.sourceRunId || 'sem sourceRunId'}</span>
+                </div>
+                <div className={styles.pendingEventMeta}>
+                  <span>Tentativas: {event.retries || 0}</span>
+                  <span>Ultima tentativa: {formatDateTime(event.lastAttemptAt)}</span>
+                </div>
+                <div className={styles.pendingEventError}>
+                  {event.lastError || 'Aguardando reenvio automatico.'}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.emptyState}>
+            Nenhum evento local aguardando reenvio.
+          </div>
+        )}
       </div>
 
       <div className={styles.commandSection}>

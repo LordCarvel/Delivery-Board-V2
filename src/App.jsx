@@ -43,8 +43,73 @@ function formatShortTime(value) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Ainda nao registrado';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('pt-BR');
+}
+
 function normalizePedidoToken(value) {
   return String(value ?? '').trim().replace(/^#/, '');
+}
+
+function hasHubBinding(entrega) {
+  return Boolean(
+    entrega?.externalOrigin
+    || entrega?.hubOrderId
+    || entrega?.sourceApp
+    || entrega?.sourceBranchId
+    || entrega?.sourceBranchName
+    || entrega?.sourceStoreName
+  );
+}
+
+function buildHubPublishFeedback(result, entregasDaViagem = []) {
+  if (!result) {
+    return null;
+  }
+
+  const hubLinkedOrdersCount = entregasDaViagem.filter((entrega) => hasHubBinding(entrega)).length;
+  const refreshHint = result.refreshError
+    ? ` Ultima tentativa de atualizar pedidos do hub: ${result.refreshError}`
+    : '';
+
+  if (result.status === 'published') {
+    return {
+      tone: 'success',
+      message: `Roda publicada no hub com ${result.matchedOrdersCount || 0} pedido(s).`,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  if (result.status === 'queued') {
+    const reason = result.reason === 'offline'
+      ? 'Sem conexao com a internet.'
+      : (result.error?.message || 'Falha ao publicar evento no hub.');
+
+    return {
+      tone: 'warning',
+      message: `Viagem fechada localmente, mas o envio ao hub ficou na fila local. ${reason}${refreshHint}`,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  if (result.status === 'skipped' && result.reason === 'no_hub_orders') {
+    return {
+      tone: 'warning',
+      message: hubLinkedOrdersCount > 0
+        ? `Viagem fechada localmente, mas o delivery-board nao conseguiu montar o despacho com os pedidos do hub desta roda.${refreshHint}`
+        : `Viagem fechada localmente, mas nenhum pedido desta roda estava vinculado ao hub.${refreshHint}`,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  return {
+    tone: 'warning',
+    message: `A publicacao da roda no hub nao foi concluida.${refreshHint}`,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 function App() {
@@ -89,7 +154,9 @@ function App() {
   const [hubLastSyncAt, setHubLastSyncAt] = useState('');
   const [hubLastError, setHubLastError] = useState('');
   const [isHubSyncing, setIsHubSyncing] = useState(false);
+  const [hubPendingEvents, setHubPendingEvents] = useState(() => getPendingHubEvents());
   const [pendingHubEventsCount, setPendingHubEventsCount] = useState(() => getPendingHubEvents().length);
+  const [hubPublishFeedback, setHubPublishFeedback] = useState(null);
   const hubSyncInFlightRef = useRef(false);
 
   const workspaceId = getWorkspaceId();
@@ -100,7 +167,9 @@ function App() {
   const DEMO_NAME = 'Demo (exemplo)';
 
   const refreshPendingHubEvents = useCallback(() => {
-    setPendingHubEventsCount(getPendingHubEvents().length);
+    const pendingEvents = getPendingHubEvents();
+    setHubPendingEvents(pendingEvents);
+    setPendingHubEventsCount(pendingEvents.length);
   }, []);
 
   const syncHub = useCallback(async (overrideConfig) => {
@@ -130,7 +199,7 @@ function App() {
         (snapshot.commands || []).filter((command) => command.command === 'create_whatsapp_dispatch_message')
       );
       setHubLastSyncAt(new Date().toISOString());
-      setHubLastError('');
+      setHubLastError(snapshot.errorMessage || '');
     } catch (error) {
       setHubLastError(error?.message || 'Falha ao sincronizar com o Hub');
     } finally {
@@ -359,16 +428,37 @@ function App() {
     lastError: hubLastError,
     sharedOrders: hubSharedOrders,
     pendingCommands: hubPendingCommands,
+    pendingEvents: hubPendingEvents,
     pendingEventsCount: pendingHubEventsCount,
-  }), [hubLastError, hubLastSyncAt, hubPendingCommands, hubSharedOrders, isHubSyncing, pendingHubEventsCount]);
+    publishFeedback: hubPublishFeedback,
+  }), [
+    hubLastError,
+    hubLastSyncAt,
+    hubPendingCommands,
+    hubPendingEvents,
+    hubPublishFeedback,
+    hubSharedOrders,
+    isHubSyncing,
+    pendingHubEventsCount,
+  ]);
 
   const syncStatus = useMemo(() => {
     if (!hubConfig.enabled) return 'hub-off';
     if (!String(hubConfig.projectId || '').trim()) return 'config';
+    if (pendingHubEventsCount > 0) return `fila/${pendingHubEventsCount}`;
     if (isHubSyncing) return 'syncing';
     if (hubLastError) return 'erro';
+    if (hubPublishFeedback?.tone === 'warning') return 'atencao';
     return `ok/${hubPendingCommands.length} cmd`;
-  }, [hubConfig.enabled, hubConfig.projectId, hubLastError, hubPendingCommands.length, isHubSyncing]);
+  }, [
+    hubConfig.enabled,
+    hubConfig.projectId,
+    hubLastError,
+    hubPendingCommands.length,
+    hubPublishFeedback?.tone,
+    isHubSyncing,
+    pendingHubEventsCount,
+  ]);
 
   const buildHubOptsForPedido = useCallback((pedido) => {
     const sharedOrder = findMatchingSharedOrder(hubSharedOrders, pedido);
@@ -510,7 +600,16 @@ function App() {
       });
     }
 
+    const publishFeedback = buildHubPublishFeedback(result, entregasDaViagem);
+    if (publishFeedback) {
+      setHubPublishFeedback(publishFeedback);
+    }
+
     refreshPendingHubEvents();
+
+    if (publishFeedback?.tone === 'warning') {
+      window.alert(publishFeedback.message);
+    }
 
     if (hubConfig.enabled && String(hubConfig.projectId || '').trim()) {
       void syncHub(hubConfig);
@@ -523,12 +622,20 @@ function App() {
 
     if (!viagem?.lastHubSourceRunId) return;
 
-    await publishDeliveryRunReverted(hubConfig, {
+    const result = await publishDeliveryRunReverted(hubConfig, {
       sourceRunId: viagem.lastHubSourceRunId,
       operationalDate: getOperationalDate(viagem.dataHoraSaida || new Date()),
     });
 
     refreshPendingHubEvents();
+
+    if (result?.status === 'queued') {
+      setHubPublishFeedback({
+        tone: 'warning',
+        message: `A reabertura da viagem ficou pendente na fila local do hub. ${result.error?.message || ''}`.trim(),
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     if (hubConfig.enabled && String(hubConfig.projectId || '').trim()) {
       void syncHub(hubConfig);
@@ -789,8 +896,31 @@ function App() {
           onStartTour={() => {
             setTourOpen(true);
           }}
-          onOpenHub={() => setHubModalOpen(true)}
-        />
+        onOpenHub={() => setHubModalOpen(true)}
+      />
+      {hubPublishFeedback ? (
+        <div
+          style={{
+            margin: '0 1.25rem 1rem',
+            padding: '0.85rem 1rem',
+            borderRadius: '12px',
+            border: hubPublishFeedback.tone === 'warning'
+              ? '1px solid rgba(185, 28, 28, 0.18)'
+              : '1px solid rgba(16, 185, 129, 0.18)',
+            background: hubPublishFeedback.tone === 'warning'
+              ? 'rgba(254, 242, 242, 0.92)'
+              : 'rgba(236, 253, 245, 0.92)',
+            color: hubPublishFeedback.tone === 'warning' ? '#991b1b' : '#166534',
+            fontSize: '0.92rem',
+            lineHeight: 1.45,
+          }}
+        >
+          <strong>Hub:</strong> {hubPublishFeedback.message}
+          <span style={{ marginLeft: '0.55rem', opacity: 0.82 }}>
+            {formatDateTime(hubPublishFeedback.createdAt)}
+          </span>
+        </div>
+      ) : null}
         <MotoboyContainer>
           {renderMotoboys()}
         </MotoboyContainer>

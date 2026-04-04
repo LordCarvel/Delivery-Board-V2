@@ -81,6 +81,24 @@
   color: #9e2d2d;
 }
 
+.statusInline {
+  margin-top: 0.25rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(243, 244, 246, 0.9);
+  color: #334155;
+}
+
+.statusInline[data-tone='warning'] {
+  background: rgba(254, 242, 242, 0.95);
+  color: #991b1b;
+}
+
+.statusInline[data-tone='success'] {
+  background: rgba(236, 253, 245, 0.95);
+  color: #166534;
+}
+
 .commandSection {
   display: flex;
   flex-direction: column;
@@ -149,6 +167,39 @@
   display: flex;
   gap: 0.45rem;
   flex-wrap: wrap;
+}
+
+.pendingEventList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.pendingEventCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(255, 248, 248, 0.9);
+  border: 1px solid rgba(239, 68, 68, 0.16);
+}
+
+.pendingEventMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  color: #4b5563;
+  font-size: 0.82rem;
+}
+
+.pendingEventError {
+  color: #991b1b;
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
 .emptyState {

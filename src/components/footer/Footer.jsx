@@ -8,9 +8,9 @@ function Footer() {
       <div className={styles.content}>
         <span className={styles.text}>Delivery Board</span>
         <span className={styles.separator} />
-        <span className={styles.text}>Painel de Entregas</span>
+        <span className={styles.text}>v2.01</span>
         <span className={styles.separator} />
-        <span className={styles.text}>© {currentYear} LordCarvel</span>
+        <span className={styles.text}>{currentYear} <a href="https://github.com/LordCarvel" target="_blank" rel="noopener noreferrer">LordCarvel</a></span>
       </div>
     </footer>
   );

@@ -311,6 +311,37 @@ export const buildEntregaHubFields = (sharedOrder) => {
   };
 };
 
+const buildFallbackSharedOrderFromEntrega = (entrega) => {
+  const hubOrderId = String(entrega?.hubOrderId || '').trim();
+  const sourceOrderId = String(entrega?.numeroPedido || '').trim();
+  const sourceApp = String(entrega?.sourceApp || '').trim();
+  const sourceBranchId = String(entrega?.sourceBranchId || '').trim();
+  const sourceBranchName = String(entrega?.sourceBranchName || '').trim();
+  const sourceStoreName = String(entrega?.sourceStoreName || '').trim();
+  const externalOrigin = Boolean(
+    entrega?.externalOrigin
+    || hubOrderId
+    || sourceApp
+    || sourceBranchId
+    || sourceBranchName
+    || sourceStoreName
+  );
+
+  if (!externalOrigin || (!hubOrderId && !sourceOrderId)) {
+    return null;
+  }
+
+  return {
+    hubOrderId,
+    sourceApp,
+    sourceOrderId,
+    sourceBranchId,
+    sourceBranchName,
+    sourceStoreName,
+    status: 'RECEIVED',
+  };
+};
+
 export const reconcileEntregasWithSharedOrders = (entregas = [], sharedOrders = []) => {
   let changed = false;
 
@@ -353,9 +384,14 @@ export const buildDispatchEventPayload = ({ viagem, motoboy, entregas = [], shar
 
   const matchedOrders = entregas
     .map((entrega, index) => {
-      const sharedOrder = findMatchingSharedOrder(sharedOrders, entrega);
+      const snapshotSharedOrder = findMatchingSharedOrder(sharedOrders, entrega);
+      const sharedOrder = snapshotSharedOrder || buildFallbackSharedOrderFromEntrega(entrega);
 
-      if (!sharedOrder || !isSharedOrderDispatchable(sharedOrder)) {
+      if (!sharedOrder) {
+        return null;
+      }
+
+      if (snapshotSharedOrder && !isSharedOrderDispatchable(snapshotSharedOrder)) {
         return null;
       }
 
@@ -390,6 +426,42 @@ export const buildDispatchEventPayload = ({ viagem, motoboy, entregas = [], shar
       })),
     },
   };
+};
+
+const resolveDispatchEventPayload = async (config, params = {}) => {
+  const normalizedConfig = normalizeConfig(config);
+  const cachedSharedOrders = Array.isArray(params.sharedOrders) ? params.sharedOrders : [];
+  const cachedBuilt = buildDispatchEventPayload({
+    ...params,
+    sharedOrders: cachedSharedOrders,
+  });
+
+  if (cachedBuilt) {
+    return { built: cachedBuilt, refreshError: '' };
+  }
+
+  if (!normalizedConfig.enabled || !hasProjectId(normalizedConfig.projectId)) {
+    return { built: null, refreshError: '' };
+  }
+
+  try {
+    const freshSharedOrders = await fetchSharedOrders(normalizedConfig);
+    setSharedOrdersCache(freshSharedOrders);
+    return {
+      built: buildDispatchEventPayload({
+        ...params,
+        sharedOrders: freshSharedOrders,
+      }),
+      refreshError: '',
+    };
+  } catch (error) {
+    return {
+      built: null,
+      refreshError: error instanceof Error
+        ? error.message
+        : 'Falha ao atualizar pedidos do hub antes de publicar a viagem.',
+    };
+  }
 };
 
 export const buildRevertEventPayload = ({ sourceRunId, operationalDate }) => {
@@ -458,9 +530,9 @@ export const publishDeliveryHubEvent = async (config, event) => {
 };
 
 export const publishDeliveryRunDispatched = async (config, params) => {
-  const built = buildDispatchEventPayload(params);
+  const { built, refreshError } = await resolveDispatchEventPayload(config, params);
   if (!built) {
-    return { status: 'skipped', reason: 'no_hub_orders' };
+    return { status: 'skipped', reason: 'no_hub_orders', refreshError };
   }
 
   return publishDeliveryHubEvent(config, {
@@ -472,6 +544,7 @@ export const publishDeliveryRunDispatched = async (config, params) => {
     ...result,
     nextSequence: built.nextSequence,
     matchedOrdersCount: built.payload.orders.length,
+    refreshError,
   }));
 };
 
@@ -544,10 +617,26 @@ export const syncDeliveryHubState = async (config) => {
     };
   }
 
-  const [sharedOrders, commands] = await Promise.all([
-    fetchSharedOrders(normalizedConfig),
-    fetchPendingCommands(normalizedConfig),
+  const [sharedOrdersResult, commandsResult] = await Promise.all([
+    fetchSharedOrders(normalizedConfig)
+      .then((data) => ({ data, errorMessage: '' }))
+      .catch((error) => ({
+        data: getCachedSharedOrders(),
+        errorMessage: error instanceof Error ? error.message : 'Falha ao buscar pedidos compartilhados.',
+      })),
+    fetchPendingCommands(normalizedConfig)
+      .then((data) => ({ data, errorMessage: '' }))
+      .catch((error) => ({
+        data: getCachedHubCommands(),
+        errorMessage: error instanceof Error ? error.message : 'Falha ao buscar comandos pendentes.',
+      })),
   ]);
+
+  const sharedOrders = sharedOrdersResult.data;
+  const commands = commandsResult.data;
+  const errorMessage = [sharedOrdersResult.errorMessage, commandsResult.errorMessage]
+    .filter(Boolean)
+    .join(' | ');
 
   setSharedOrdersCache(sharedOrders);
   setCommandsCache(commands);
@@ -555,7 +644,8 @@ export const syncDeliveryHubState = async (config) => {
   return {
     sharedOrders,
     commands,
-    reason: 'synced',
+    reason: errorMessage ? 'partial_sync' : 'synced',
+    errorMessage,
   };
 };
 
